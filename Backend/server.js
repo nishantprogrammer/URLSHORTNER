@@ -6,9 +6,18 @@ import urlRoutes from './Routes/urlRoutes.js'
 dotenv.config({})
 const Port = process.env.PORT || 8000
 const app = express()
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
 const corsoption = {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-    credentials: true
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
 }
 // Trust proxy headers when deployed behind a proxy (adjust as needed)
 app.set('trust proxy', true)
