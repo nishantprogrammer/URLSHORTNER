@@ -65,7 +65,8 @@ export const createShortUrl = async (req, res) => {
             // Check if URL already exists (optional) only for random
             const existingUrl = await UrlModel.findOne({ originalUrl });
             if (existingUrl) {
-                const base = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 8000}`;
+                // Use PUBLIC_BASE_URL or construct from request
+                const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
                 const fullShort = `${base}/${existingUrl.shortUrl}`;
                 return res.status(200).json({
                     message: "Short URL already exists",
@@ -88,7 +89,8 @@ export const createShortUrl = async (req, res) => {
             shortUrl
         });
 
-        const base = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 8000}`;
+        // Use PUBLIC_BASE_URL or construct from request
+        const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
         const fullShort = `${base}/${newUrl.shortUrl}`;
 
         return res.status(201).json({
@@ -144,7 +146,8 @@ export const getUrlAnalytics = async (req, res) => {
         const totalClicks = urlDoc.history.reduce((sum, entry) => sum + entry.count, 0);
         const uniqueVisitors = urlDoc.history.length;
 
-        const base = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 8000}`;
+        // Use PUBLIC_BASE_URL or construct from request
+        const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
         const fullShort = `${base}/${urlDoc.shortUrl}`;
 
         return res.status(200).json({
@@ -179,7 +182,8 @@ export const getAllUrlStats = async (req, res) => {
             const totalClicks = url.history.reduce((sum, entry) => sum + entry.count, 0);
             const uniqueVisitors = url.history.length;
 
-            const base = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 8000}`;
+            // Use PUBLIC_BASE_URL or construct from request
+            const base = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
             const fullShort = `${base}/${url.shortUrl}`;
             
             return {
