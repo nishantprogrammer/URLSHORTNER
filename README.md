@@ -362,6 +362,8 @@ This project is provided as‑is for learning and experimentation. Add your pref
 <img width="1919" height="980" alt="image" src="https://github.com/user-attachments/assets/ab553fab-cdeb-4156-991c-a89cdd4733f0" />
 <img width="1919" height="977" alt="image" src="https://github.com/user-attachments/assets/6b772be5-6ff8-469b-89ab-238ee1bd3385" />
 <img width="1917" height="982" alt="image" src="https://github.com/user-attachments/assets/6b85e370-4587-421e-87dc-4f634095cdad" />
+<img width="1919" height="974" alt="image" src="https://github.com/user-attachments/assets/f035bc4b-3c28-463e-b123-3c71211f4d3f" />
+
 
 
 
