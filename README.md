@@ -355,5 +355,18 @@ The admin system uses a secure password-based authentication:
 ## License
 
 This project is provided as‑is for learning and experimentation. Add your preferred license if you intend to publish.
+## Outputs:
+<img width="1919" height="971" alt="image" src="https://github.com/user-attachments/assets/14565209-06de-45bc-a019-b3524bce119f" />
+<img width="1919" height="971" alt="image" src="https://github.com/user-attachments/assets/aca58905-3c5d-43a8-b7c5-6c896bda3d53" />
+<img width="1919" height="978" alt="image" src="https://github.com/user-attachments/assets/7abf6684-fe5a-4aba-92fd-34fe4268bcfa" />
+<img width="1919" height="980" alt="image" src="https://github.com/user-attachments/assets/ab553fab-cdeb-4156-991c-a89cdd4733f0" />
+<img width="1919" height="977" alt="image" src="https://github.com/user-attachments/assets/6b772be5-6ff8-469b-89ab-238ee1bd3385" />
+<img width="1917" height="982" alt="image" src="https://github.com/user-attachments/assets/6b85e370-4587-421e-87dc-4f634095cdad" />
+
+
+
+
+
+
 
 
