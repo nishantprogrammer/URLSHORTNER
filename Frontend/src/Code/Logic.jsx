@@ -1,10 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { Copy, ExternalLink, BarChart3, Download } from 'lucide-react';
+import { Copy, ExternalLink, BarChart3, Download, Lock, X, Eye, EyeOff } from 'lucide-react';
 import Navigation from './Navigation';
-import { API_BASE, ADMIN_KEY } from '../config';
+import { API_BASE } from '../config';
 
 const Logic = () => {
-  const isAdmin = Boolean(ADMIN_KEY);
+  const [isAdmin, setIsAdmin] = useState(false); // Will be set to true after password verification
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  // Initialize rate limiting state from localStorage to persist across page refreshes
+  const [loginAttempts, setLoginAttempts] = useState(() => {
+    const stored = localStorage.getItem('admin_login_attempts');
+    return stored ? parseInt(stored, 10) : 0;
+  });
+  const [isLocked, setIsLocked] = useState(() => {
+    const stored = localStorage.getItem('admin_is_locked');
+    return stored === 'true';
+  });
+  const [lockoutTime, setLockoutTime] = useState(() => {
+    const stored = localStorage.getItem('admin_lockout_time');
+    return stored ? parseInt(stored, 10) : 0;
+  });
+  const [changePasswordData, setChangePasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
+  const [showChangePassword, setShowChangePassword] = useState({
+    current: false,
+    new: false,
+    confirm: false
+  });
+  
   const [showAdminView, setShowAdminView] = useState(false);
   const [longUrl, setLongUrl] = useState('');
   const [shortUrl, setShortUrl] = useState('');
@@ -29,6 +60,202 @@ const Logic = () => {
       setShowAdminView(false);
     }
   }, [isAdmin, showAdminView]);
+
+  // Check if user is locked out
+  useEffect(() => {
+    const checkLockout = () => {
+      const now = Date.now();
+      if (lockoutTime > 0 && now < lockoutTime) {
+        setIsLocked(true);
+      } else if (lockoutTime > 0 && now >= lockoutTime) {
+        setIsLocked(false);
+        setLockoutTime(0);
+        setLoginAttempts(0);
+        // Clear localStorage when lockout expires
+        localStorage.removeItem('admin_is_locked');
+        localStorage.removeItem('admin_lockout_time');
+        localStorage.removeItem('admin_login_attempts');
+      }
+    };
+
+    const interval = setInterval(checkLockout, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutTime]);
+
+  // Persist rate limiting state to localStorage whenever it changes
+  useEffect(() => {
+    if (loginAttempts > 0) {
+      localStorage.setItem('admin_login_attempts', loginAttempts.toString());
+    }
+  }, [loginAttempts]);
+
+  useEffect(() => {
+    if (isLocked) {
+      localStorage.setItem('admin_is_locked', 'true');
+    }
+  }, [isLocked]);
+
+  useEffect(() => {
+    if (lockoutTime > 0) {
+      localStorage.setItem('admin_lockout_time', lockoutTime.toString());
+    }
+  }, [lockoutTime]);
+
+  // Password verification function
+  const verifyPassword = async () => {
+    if (isLocked) {
+      const remainingTime = Math.ceil((lockoutTime - Date.now()) / 1000);
+      setPasswordError(`Too many failed attempts. Please wait ${remainingTime} seconds.`);
+      return;
+    }
+
+    try {
+      setPasswordError('');
+      
+      const response = await fetch(`${API_BASE}/admin/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setIsAdmin(true);
+        setShowPasswordModal(false);
+        setPassword('');
+        setPasswordError('');
+        // Automatically switch to admin view after successful login
+        setShowAdminView(true);
+        if (fetchStats) fetchStats();
+        
+        // Show success message if it's the default password
+        if (data.isDefaultPassword) {
+          alert('Login successful! You are using the default password "admin123". Consider changing it for security.');
+        }
+        setLoginAttempts(0);
+        setIsLocked(false);
+        setLockoutTime(0);
+        // Clear localStorage on successful login
+        localStorage.removeItem('admin_login_attempts');
+        localStorage.removeItem('admin_is_locked');
+        localStorage.removeItem('admin_lockout_time');
+      } else {
+        handleFailedLogin();
+      }
+    } catch (error) {
+      console.error('Error verifying password:', error);
+      handleFailedLogin();
+    }
+  };
+
+  // Handle failed login attempts
+  const handleFailedLogin = () => {
+    const newAttempts = loginAttempts + 1;
+    setLoginAttempts(newAttempts);
+    // Persist to localStorage
+    localStorage.setItem('admin_login_attempts', newAttempts.toString());
+    
+    if (newAttempts >= 5) {
+      // Lock for 5 minutes after 5 failed attempts
+      const lockoutDuration = 5 * 60 * 1000; // 5 minutes in milliseconds
+      const newLockoutTime = Date.now() + lockoutDuration;
+      setLockoutTime(newLockoutTime);
+      setIsLocked(true);
+      // Persist lockout state to localStorage
+      localStorage.setItem('admin_is_locked', 'true');
+      localStorage.setItem('admin_lockout_time', newLockoutTime.toString());
+      setPasswordError('Too many failed attempts. Please wait 5 minutes.');
+    } else {
+      const remainingAttempts = 5 - newAttempts;
+      setPasswordError(`Incorrect password. ${remainingAttempts} attempts remaining.`);
+    }
+  };
+
+  // Handle password input key press
+  const handlePasswordKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      verifyPassword();
+    }
+  };
+
+  // Change password function
+  const changePassword = async () => {
+    try {
+      setChangePasswordError('');
+      setChangePasswordSuccess('');
+      
+      const { currentPassword, newPassword, confirmPassword } = changePasswordData;
+      
+      // Validation
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        setChangePasswordError('All fields are required');
+        return;
+      }
+      
+      if (newPassword.length < 6) {
+        setChangePasswordError('New password must be at least 6 characters long');
+        return;
+      }
+      
+      if (newPassword !== confirmPassword) {
+        setChangePasswordError('New passwords do not match');
+        return;
+      }
+      
+      const response = await fetch(`${API_BASE}/admin/password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          currentPassword, 
+          newPassword 
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setChangePasswordSuccess('Password updated successfully!');
+        setChangePasswordData({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        });
+        
+        // Close modal after 2 seconds
+        setTimeout(() => {
+          setShowChangePasswordModal(false);
+          setChangePasswordSuccess('');
+        }, 2000);
+      } else {
+        setChangePasswordError(data.message || 'Failed to update password');
+      }
+    } catch (error) {
+      console.error('Error changing password:', error);
+      setChangePasswordError('Network error. Please try again.');
+    }
+  };
+
+  // Logout function
+  const logout = () => {
+    setIsAdmin(false);
+    setShowAdminView(false);
+    // Don't clear rate limiting state on logout - user should still be locked out if they were
+  };
+
+  // Function to clear rate limiting state (useful for testing or admin use)
+  const clearRateLimit = () => {
+    setLoginAttempts(0);
+    setIsLocked(false);
+    setLockoutTime(0);
+    localStorage.removeItem('admin_login_attempts');
+    localStorage.removeItem('admin_is_locked');
+    localStorage.removeItem('admin_lockout_time');
+  };
 
   // URL validation function
   const validateUrl = (url) => {
@@ -210,11 +437,12 @@ const Logic = () => {
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/admin/stats`, {
-        headers: ADMIN_KEY ? { 'x-admin-key': ADMIN_KEY } : {}
-      });
+      
+      const response = await fetch(`${API_BASE}/admin/stats`);
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch stats');
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch stats: ${response.status} ${errorText}`);
       }
       const data = await response.json();
       setStats(data.urls || []);
@@ -235,9 +463,124 @@ const Logic = () => {
           showAdminView={showAdminView}
           setShowAdminView={setShowAdminView}
           fetchStats={fetchStats}
+          onAdminLogin={() => setShowPasswordModal(true)}
+          onLogout={logout}
         />
 
-        {!(showAdminView && isAdmin) ? (
+        {showAdminView && isAdmin ? (
+          /* Admin Analytics Panel */
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white">URL Analytics Dashboard</h2>
+                <button
+                  onClick={() => setShowChangePasswordModal(true)}
+                  className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-all duration-300 flex items-center gap-2"
+                  title="Change admin password"
+                >
+                  <Lock className="h-4 w-4" />
+                  Change Password
+                </button>
+              </div>
+              
+              {stats.length === 0 ? (
+                <div className="text-center py-12">
+                  <BarChart3 className="h-12 w-12 text-blue-300 mx-auto mb-4" />
+                  {loading ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-300 mr-2"></div>
+                      <p className="text-blue-200">Loading analytics...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-blue-200">No data available yet</p>
+                      <p className="text-blue-300 text-sm mt-2">Create some short URLs to see analytics here</p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-white/20">
+                        <th className="pb-3 text-blue-200 font-semibold">Short Code</th>
+                        <th className="pb-3 text-blue-200 font-semibold">Original URL</th>
+                        <th className="pb-3 text-blue-200 font-semibold">Clicks</th>
+                        <th className="pb-3 text-blue-200 font-semibold">Created</th>
+                        <th className="pb-3 text-blue-200 font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stats.map((url, index) => (
+                        <>
+                          <tr key={(url._id || index) + '-row'} className="border-b border-white/10 hover:bg-white/5">
+                            <td className="py-4">
+                              <code className="bg-blue-500/20 text-blue-200 px-2 py-1 rounded">
+                                {url.shortUrl}
+                              </code>
+                            </td>
+                            <td className="py-4 text-white max-w-md">
+                              <div className="truncate" title={url.originalUrl}>
+                                {url.originalUrl}
+                              </div>
+                            </td>
+                            <td className="py-4">
+                              <span className="bg-green-500/20 text-green-200 px-3 py-1 rounded-full">
+                                {url.totalClicks || 0}
+                              </span>
+                            </td>
+                            <td className="py-4 text-blue-200">
+                              {new Date(url.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-4 space-x-3">
+                              <a
+                                href={`${API_BASE}/${url.shortUrl}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                                title="Open short URL"
+                              >
+                                <ExternalLink className="h-4 w-4 inline" />
+                              </a>
+                              <button
+                                onClick={() => setExpandedRowId(expandedRowId === (url._id || index) ? null : (url._id || index))}
+                                className="text-blue-400 hover:text-blue-300 transition-colors duration-200 underline"
+                                title={expandedRowId === (url._id || index) ? 'Hide IPs' : 'View IPs'}
+                              >
+                                {expandedRowId === (url._id || index) ? 'Hide IPs' : 'View IPs'}
+                              </button>
+                            </td>
+                          </tr>
+                          {expandedRowId === (url._id || index) && (
+                            <tr key={(url._id || index) + '-ips'} className="border-b border-white/10">
+                              <td colSpan={5} className="py-3">
+                                {url.history && url.history.length > 0 ? (
+                                  <div className="text-blue-100">
+                                    <div className="mb-2 text-sm text-blue-200">Visitor IPs (aggregated by IP):</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                      {url.history.map((h, i) => (
+                                        <div key={h.ip + '-' + i} className="flex items-center justify-between bg-white/5 rounded px-3 py-2">
+                                          <code className="text-blue-200">{h.ip}</code>
+                                          <span className="text-green-200 text-sm">{h.count} {h.count === 1 ? 'click' : 'clicks'}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-blue-200">No IP data yet</div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
           /* URL Shortener Form */
           <div className="max-w-2xl mx-auto">
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20">
@@ -391,109 +734,6 @@ const Logic = () => {
               )}
             </div>
           </div>
-        ) : (
-          /* Admin Analytics Panel */
-          <div className="max-w-6xl mx-auto">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20">
-              <h2 className="text-2xl font-bold text-white mb-6">URL Analytics Dashboard</h2>
-              
-              {stats.length === 0 ? (
-                <div className="text-center py-12">
-                  <BarChart3 className="h-12 w-12 text-blue-300 mx-auto mb-4" />
-                  {loading ? (
-                    <div className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-300 mr-2"></div>
-                      <p className="text-blue-200">Loading analytics...</p>
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-blue-200">No data available yet</p>
-                      <p className="text-blue-300 text-sm mt-2">Create some short URLs to see analytics here</p>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-white/20">
-                        <th className="pb-3 text-blue-200 font-semibold">Short Code</th>
-                        <th className="pb-3 text-blue-200 font-semibold">Original URL</th>
-                        <th className="pb-3 text-blue-200 font-semibold">Clicks</th>
-                        <th className="pb-3 text-blue-200 font-semibold">Created</th>
-                        <th className="pb-3 text-blue-200 font-semibold">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stats.map((url, index) => (
-                        <>
-                          <tr key={(url._id || index) + '-row'} className="border-b border-white/10 hover:bg-white/5">
-                            <td className="py-4">
-                              <code className="bg-blue-500/20 text-blue-200 px-2 py-1 rounded">
-                                {url.shortUrl}
-                              </code>
-                            </td>
-                            <td className="py-4 text-white max-w-md">
-                              <div className="truncate" title={url.originalUrl}>
-                                {url.originalUrl}
-                              </div>
-                            </td>
-                            <td className="py-4">
-                              <span className="bg-green-500/20 text-green-200 px-3 py-1 rounded-full">
-                                {url.totalClicks || 0}
-                              </span>
-                            </td>
-                            <td className="py-4 text-blue-200">
-                              {new Date(url.createdAt).toLocaleDateString()}
-                            </td>
-                            <td className="py-4 space-x-3">
-                              <a
-                                href={`${API_BASE}/${url.shortUrl}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-400 hover:text-blue-300 transition-colors duration-200"
-                                title="Open short URL"
-                              >
-                                <ExternalLink className="h-4 w-4 inline" />
-                              </a>
-                              <button
-                                onClick={() => setExpandedRowId(expandedRowId === (url._id || index) ? null : (url._id || index))}
-                                className="text-blue-400 hover:text-blue-300 transition-colors duration-200 underline"
-                                title={expandedRowId === (url._id || index) ? 'Hide IPs' : 'View IPs'}
-                              >
-                                {expandedRowId === (url._id || index) ? 'Hide IPs' : 'View IPs'}
-                              </button>
-                            </td>
-                          </tr>
-                          {expandedRowId === (url._id || index) && (
-                            <tr key={(url._id || index) + '-ips'} className="border-b border-white/10">
-                              <td colSpan={5} className="py-3">
-                                {url.history && url.history.length > 0 ? (
-                                  <div className="text-blue-100">
-                                    <div className="mb-2 text-sm text-blue-200">Visitor IPs (aggregated by IP):</div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                      {url.history.map((h, i) => (
-                                        <div key={h.ip + '-' + i} className="flex items-center justify-between bg-white/5 rounded px-3 py-2">
-                                          <code className="text-blue-200">{h.ip}</code>
-                                          <span className="text-green-200 text-sm">{h.count} {h.count === 1 ? 'click' : 'clicks'}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="text-blue-200">No IP data yet</div>
-                                )}
-                              </td>
-                            </tr>
-                          )}
-                        </>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
         )}
 
         
@@ -506,6 +746,191 @@ const Logic = () => {
             className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-xl"
           >
             Copied to clipboard
+          </div>
+        </div>
+      )}
+
+      {/* Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-gray-900">Admin Login</h3>
+              <button
+                onClick={() => setShowPasswordModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyPress={handlePasswordKeyPress}
+                    disabled={isLocked}
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      passwordError ? 'border-red-500' : 'border-gray-300'
+                    } ${isLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                    placeholder="Enter admin password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    disabled={isLocked}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+                {passwordError && (
+                  <p className="text-sm text-red-600 mt-1">{passwordError}</p>
+                )}
+              </div>
+
+              <button
+                onClick={verifyPassword}
+                disabled={isLocked || !password.trim()}
+                className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
+                  isLocked || !password.trim()
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
+                }`}
+              >
+                {isLocked ? 'Login Locked' : 'Login'}
+              </button>
+
+              {isLocked && lockoutTime > 0 && (
+                <p className="text-sm text-gray-600 text-center">
+                  Locked until {new Date(lockoutTime).toLocaleTimeString()}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {showChangePasswordModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-gray-900">Change Password</h3>
+              <button
+                onClick={() => setShowChangePasswordModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Current Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showChangePassword.current ? "text" : "password"}
+                    value={changePasswordData.currentPassword}
+                    onChange={(e) => setChangePasswordData({
+                      ...changePasswordData,
+                      currentPassword: e.target.value
+                    })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter current password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowChangePassword({
+                      ...showChangePassword,
+                      current: !showChangePassword.current
+                    })}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showChangePassword.current ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showChangePassword.new ? "text" : "password"}
+                    value={changePasswordData.newPassword}
+                    onChange={(e) => setChangePasswordData({
+                      ...changePasswordData,
+                      newPassword: e.target.value
+                    })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter new password (min 6 chars)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowChangePassword({
+                      ...showChangePassword,
+                      new: !showChangePassword.new
+                    })}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showChangePassword.new ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showChangePassword.confirm ? "text" : "password"}
+                    value={changePasswordData.confirmPassword}
+                    onChange={(e) => setChangePasswordData({
+                      ...changePasswordData,
+                      confirmPassword: e.target.value
+                    })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Confirm new password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowChangePassword({
+                      ...showChangePassword,
+                      confirm: !showChangePassword.confirm
+                    })}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showChangePassword.confirm ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+              </div>
+
+              {changePasswordError && (
+                <p className="text-sm text-red-600">{changePasswordError}</p>
+              )}
+
+              {changePasswordSuccess && (
+                <p className="text-sm text-green-600">{changePasswordSuccess}</p>
+              )}
+
+              <button
+                onClick={changePassword}
+                className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 active:bg-blue-800 transition-all duration-200"
+              >
+                Change Password
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
-import { BarChart3, Zap } from "lucide-react";
+import { BarChart3, Zap, Lock, LogOut } from "lucide-react";
 
-const Navigation = ({ isAdmin, showAdminView, setShowAdminView, fetchStats }) => {
+const Navigation = ({ isAdmin, showAdminView, setShowAdminView, fetchStats, onAdminLogin, onLogout }) => {
   const handleShortenClick = () => {
     setShowAdminView(false); // Switch to shortener
   };
@@ -39,6 +39,27 @@ const Navigation = ({ isAdmin, showAdminView, setShowAdminView, fetchStats }) =>
           >
             <BarChart3 className="inline h-4 w-4 mr-2" />
             Analytics
+          </button>
+        )}
+
+        {/* Admin Login/Logout Button */}
+        {isAdmin ? (
+          <button
+            onClick={onLogout}
+            className="px-4 py-2 rounded-full transition-all duration-300 bg-red-500/20 text-red-300 hover:bg-red-500/30"
+            title="Click to logout from admin"
+          >
+            <LogOut className="inline h-4 w-4 mr-2" />
+            Logout
+          </button>
+        ) : (
+          <button
+            onClick={onAdminLogin}
+            className="px-4 py-2 rounded-full transition-all duration-300 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30"
+            title="Click to login as admin"
+          >
+            <Lock className="inline h-4 w-4 mr-2" />
+            Admin Login
           </button>
         )}
       </div>

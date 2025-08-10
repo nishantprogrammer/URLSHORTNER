@@ -1,4 +1,5 @@
 import UrlModel from "../Models/Url.js";
+import AdminModel from "../Models/Admin.js";
 import { nanoid } from "nanoid";
 
 const RESERVED_WORDS = new Set([
@@ -233,6 +234,118 @@ export const checkSlugAvailability = async (req, res) => {
     } catch (error) {
         console.error('Error checking slug availability:', error);
         return res.status(500).json({ status: 'error', message: 'Server error' });
+    }
+};
+
+// NEW: Verify admin password
+export const verifyAdminPassword = async (req, res) => {
+    try {
+        const { password } = req.body;
+        
+        if (!password || !password.trim()) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Password is required" 
+            });
+        }
+
+        // Get admin password from database
+        const adminDoc = await AdminModel.findOne({});
+        
+        if (!adminDoc) {
+            // If no admin exists, create one with default password
+            const defaultPassword = "admin123"; // You can change this default
+            await AdminModel.create({ password: defaultPassword });
+            
+            if (password === defaultPassword) {
+                return res.status(200).json({ 
+                    success: true, 
+                    message: "Admin access granted",
+                    isDefaultPassword: true
+                });
+            } else {
+                return res.status(401).json({ 
+                    success: false, 
+                    message: "Incorrect password" 
+                });
+            }
+        }
+
+        // Check if password matches
+        if (password === adminDoc.password) {
+            return res.status(200).json({ 
+                success: true, 
+                message: "Admin access granted",
+                isDefaultPassword: false
+            });
+        } else {
+            return res.status(401).json({ 
+                success: false, 
+                message: "Incorrect password" 
+            });
+        }
+
+    } catch (error) {
+        console.error("Error verifying admin password:", error);
+        return res.status(500).json({ 
+            success: false, 
+            message: "Server error" 
+        });
+    }
+};
+
+// NEW: Update admin password (requires current password verification)
+export const updateAdminPassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Both current and new passwords are required" 
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "New password must be at least 6 characters long" 
+            });
+        }
+
+        // Get admin document
+        const adminDoc = await AdminModel.findOne({});
+        
+        if (!adminDoc) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Admin account not found" 
+            });
+        }
+
+        // Verify current password
+        if (currentPassword !== adminDoc.password) {
+            return res.status(401).json({ 
+                success: false, 
+                message: "Current password is incorrect" 
+            });
+        }
+
+        // Update password
+        adminDoc.password = newPassword;
+        await adminDoc.save();
+
+        return res.status(200).json({ 
+            success: true, 
+            message: "Password updated successfully" 
+        });
+
+    } catch (error) {
+        console.error("Error updating admin password:", error);
+        return res.status(500).json({ 
+            success: false, 
+            message: "Server error" 
+        });
     }
 };
 
